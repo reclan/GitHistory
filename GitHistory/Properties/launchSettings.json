@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "GitHistory": {
+      "commandName": "Project",
+      "commandLineArgs": "-w C:\\repos\\CoreMvc"
+    }
+  }
+}

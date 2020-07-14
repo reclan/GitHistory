@@ -1,47 +1,103 @@
 ﻿using System;
-using System.Diagnostics;
+using System.Collections;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using CommandLine;
 
 namespace GitHistory
 {
     class Program
     {
-        const string SEPARATOR      = "===END===";
-        const string COMMIT_PATTERN = @"^([^)]*)(?:\(([^)]*?)\)|):(.*?(?:\[([^\]]+?)\]|))\s*$";
-        const string FORMAT         = "%H%n%s%n%b%n" + SEPARATOR;
+        const string Separator      = "===END===";
+        const string CommitPattern = @"^([^)]*)(?:\(([^)]*?)\)|):(.*?(?:\[([^\]]+?)\]|))\s*$";
 
         static async Task Main(string[] args)
         {
+            await (await Parser.Default.ParseArguments<Options>(args)
+                    .WithParsedAsync(RunOptionsAsync))
+                    .WithNotParsedAsync(HandleParseErrorAsync);
 
-            var path = @"c:\repos\GitHistory";
-            string value = await GetLastTag( path );
-
-            Console.WriteLine($"A tag is '{value}'");
         }
 
-        private async static Task<string> GetLastTag( string path )
+        private static async Task RunOptionsAsync(Options opts)
         {
-            using var p = new Process();
-            p.StartInfo.FileName = "git";
-            p.StartInfo.WorkingDirectory = path;
-            p.StartInfo.UseShellExecute = false;
-            p.StartInfo.Arguments = "describe --tags --abbrev=0";
-            p.StartInfo.RedirectStandardOutput = true;
-            p.StartInfo.RedirectStandardError = true;
+            var path = opts.WorkingDirectory;
+            string value = await GetLastTagAsync( path );
 
-            p.Start();
+            var history = await GetHistoryAsync(path, value);
+            foreach (var commit in history)
+            {
+                Console.WriteLine($"{commit.Hash}\n{commit.Subject}\n{commit.Body}\n");
+            }
+        }
 
-            using( var errorReader = p.StandardError ){
-                var error = await errorReader.ReadToEndAsync();
-                // Console.Error.WriteLine(error);
+        private static async Task HandleParseErrorAsync(IEnumerable<Error> errs)
+        {
+            await Console.Out.WriteAsync("An error occured");
+        }
+
+        private static async Task<IEnumerable<CommitMeta>> GetHistoryAsync( string path, string tag)
+        {
+            IEnumerable<CommitMeta> GetCommits(string output)
+            {
+                var rawCommits = output.Split($"\n{Separator}");
+                var metas = new List<CommitMeta>();
+
+                foreach (var raw in rawCommits)
+                {
+                    if (!string.IsNullOrWhiteSpace(raw))
+                    {
+                        var lines = raw.TrimStart().Split("\n");
+                        var meta = new CommitMeta
+                        {
+                            Hash = lines[0].Trim(),
+                            Subject = lines[1].Trim(),
+                            Body = string.Join("\n", lines[2..]).Trim()
+                        };
+
+                        metas.Add(meta);
+                    }
+                }
+
+                return metas;
             }
 
-            using( var reader = p.StandardOutput ){
-                var output = await reader.ReadToEndAsync();
-                return Regex.Replace( output, @"\s", string.Empty);
+            const string Format = "%H%n%s%n%b%n" + Separator;
+
+            var revisions = string.IsNullOrWhiteSpace(tag) ? "" : (tag.Contains("..") ? tag : $"{tag}..HEAD");
+            var result = await GitWrapper.RunAsync( path, $"log -E --format={Format} {revisions}" );
+            
+            if (result.Success)
+            {
+                var output = result.StandardOutput.Trim();
+                if (!string.IsNullOrWhiteSpace(output)) 
+                    return GetCommits(output);
             }
+
+            return null;
+        }
+
+        private static async Task<string> GetLastTagAsync( string path )
+        {
+            var result = await GitWrapper.RunAsync(path, "describe --tags --abbrev=0");
+            if (result.Success)
+            {
+                var output = result.StandardOutput.Trim();
+                if (string.IsNullOrWhiteSpace(output))
+                    return null;
+                return output;
+            }
+
+            return null;
         }   
+    }
+
+    public class Options
+    {
+        [Option('w', "work-dir", Required = false, Default = ".", HelpText = "Set working directory")]
+        public string WorkingDirectory { get; set; }   
     }
 }
