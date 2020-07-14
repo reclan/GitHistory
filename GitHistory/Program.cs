@@ -15,25 +15,33 @@ namespace GitHistory
         static async Task Main(string[] args)
         {
 
-            string value = await GetLastTag();
+            var path = @"c:\repos\GitHistory";
+            string value = await GetLastTag( path );
 
-            Console.WriteLine(value);
+            Console.WriteLine($"A tag is '{value}'");
         }
 
-        private async static Task<string> GetLastTag()
+        private async static Task<string> GetLastTag( string path )
         {
             using var p = new Process();
             p.StartInfo.FileName = "git";
-            p.StartInfo.WorkingDirectory = @"c:\repos\reclan\CoreMvc";
+            p.StartInfo.WorkingDirectory = path;
             p.StartInfo.UseShellExecute = false;
             p.StartInfo.Arguments = "describe --tags --abbrev=0";
             p.StartInfo.RedirectStandardOutput = true;
+            p.StartInfo.RedirectStandardError = true;
 
             p.Start();
 
-            using var reader = p.StandardOutput;
-            var output = await reader.ReadToEndAsync();
-            return Regex.Replace( output, @"\s", string.Empty);
+            using( var errorReader = p.StandardError ){
+                var error = await errorReader.ReadToEndAsync();
+                // Console.Error.WriteLine(error);
+            }
+
+            using( var reader = p.StandardOutput ){
+                var output = await reader.ReadToEndAsync();
+                return Regex.Replace( output, @"\s", string.Empty);
+            }
         }   
     }
 }
