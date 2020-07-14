@@ -28,9 +28,16 @@ namespace GitHistory
             string value = await GetLastTagAsync( path );
 
             var history = await GetHistoryAsync(path, value);
-            foreach (var commit in history)
+            if (history != null)
             {
-                Console.WriteLine($"{commit.Hash}\n{commit.Subject}\n{commit.Body}\n");
+                foreach (var commit in history)
+                {
+                    Console.WriteLine($"{commit.Hash}\n{commit.Subject}\n{commit.Body}\n");
+                }
+            }
+            else
+            {
+                Environment.ExitCode = 128;
             }
         }
 
@@ -70,11 +77,15 @@ namespace GitHistory
             var revisions = string.IsNullOrWhiteSpace(tag) ? "" : (tag.Contains("..") ? tag : $"{tag}..HEAD");
             var result = await GitWrapper.RunAsync( path, $"log -E --format={Format} {revisions}" );
             
-            if (result.Success)
+            if (result.Success && result.ExitCode == 0)
             {
                 var output = result.StandardOutput.Trim();
                 if (!string.IsNullOrWhiteSpace(output)) 
                     return GetCommits(output);
+            }
+            else if( !string.IsNullOrWhiteSpace( result.StandardError ))
+            {
+                await Console.Error.WriteAsync(result.StandardError);
             }
 
             return null;
